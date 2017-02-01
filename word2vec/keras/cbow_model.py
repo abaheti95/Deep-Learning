@@ -12,6 +12,7 @@ from keras.objectives import mse
 import global_settings as G
 from sentences_generator import Sentences
 import vocab_generator as V_gen
+import save_embeddings as S
 
 k = G.window_size # context windows size
 context_size = 2*k
@@ -27,25 +28,31 @@ reverse_vocabulary = V_gen.generate_inverse_vocabulary_lookup(vocabulary, "vocab
 embedding = np.random.uniform(-1.0/2.0/G.embedding_dimension, 1.0/2.0/G.embedding_dimension, (G.vocab_size+3, G.embedding_dimension))
 
 # Creating CBOW model
+# Model has 3 inputs
+# Current word index, context words indexes and negative sampled word indexes
 word_index = Input(shape=(1,))
 context = Input(shape=(context_size,))
 negative_samples = Input(shape=(G.negative,))
+# All the inputs are processed through a common embedding layer
 shared_embedding_layer = Embedding(input_dim=(G.vocab_size+3), output_dim=G.embedding_dimension, weights=[embedding])
-
 word_embedding = shared_embedding_layer(word_index)
 context_embeddings = shared_embedding_layer(context)
 negative_words_embedding = shared_embedding_layer(negative_samples)
+# Now the context words are averaged to get the CBOW vector
 cbow = Lambda(lambda x: K.mean(x, axis=1), output_shape=(G.embedding_dimension,))(context_embeddings)
-
+# The context is multiplied (dot product) with current word and negative sampled words
 word_context_product = merge([word_embedding, cbow], mode='dot')
 negative_context_product = merge([negative_words_embedding, cbow], mode='dot', concat_axis=-1)
-
+# The dot products are outputted
 model = Model(input=[word_index, context, negative_samples], output=[word_context_product, negative_context_product])
-
+# binary crossentropy is applied on the output
 model.compile(optimizer='rmsprop', loss='binary_crossentropy')
 print model.summary()
 
-model.fit_generator(V_gen.pretraining_batch_generator(sentences, vocabulary, reverse_vocabulary), samples_per_epoch=G.train_words, nb_epoch=1)
+# model.fit_generator(V_gen.pretraining_batch_generator(sentences, vocabulary, reverse_vocabulary), samples_per_epoch=G.train_words, nb_epoch=1)
+model.fit_generator(V_gen.pretraining_batch_generator(sentences, vocabulary, reverse_vocabulary), samples_per_epoch=10, nb_epoch=1)
+# Save the trained embedding
+S.save_embeddings("embedding.txt", shared_embedding_layer.get_weights()[0], vocabulary)
 
 # input_context = np.random.randint(10, size=(1, context_size))
 # input_word = np.random.randint(10, size=(1,))

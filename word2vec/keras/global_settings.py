@@ -9,3 +9,5 @@ negative = 5
 vocab_size = None
 train_words = None
 
+# Special parameters
+MIN_SENTENCE_LENGTH = 3

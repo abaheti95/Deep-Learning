@@ -54,23 +54,27 @@ def generate_inverse_vocabulary_lookup(vocabulary, save_filepath):
 	reverse_vocabulary = dict()
 	# index 0 is reserved for padding
 	# UNKNOWN_WORD will have the index 1
-	reverse_vocabulary[G.UNKNOWN_WORD] = 0
+	reverse_vocabulary[G.UNKNOWN_WORD] = 1
 	index = 2
 	with codecs.open(save_filepath, "w", "utf-8") as wf:
 		# first save the UNKNOWN_WORD
 		wf.write(G.UNKNOWN_WORD + "\t" + str(vocabulary[G.UNKNOWN_WORD]) + "\n")
 		for word in sorted_words:
-			if word != G.UNKNOWN_WORD:
-				reverse_vocabulary[word] = index
-				# also write the word in the save file
-				wf.write(word + "\t" + str(vocabulary[word]) + "\n")
-				index += 1
+			if word == G.UNKNOWN_WORD:
+				continue
+			reverse_vocabulary[word] = index
+			# also write the word in the save file
+			wf.write(word + "\t" + str(vocabulary[word]) + "\n")
+			index += 1
 	return reverse_vocabulary
 
 def subsample_sentence(sentence, vocabulary):
 	subsampled_sentence = list()
 	# replace words with unknown word is not found in vocabulary
 	sentence = [word if word in vocabulary else G.UNKNOWN_WORD for word in sentence]
+	if G.sample <= 0:
+		# If sampling is set to zero then don't do the sampling
+		return sentence
 	for word in sentence:
 		# If the word is occuring frequently then the probablity of retaining that word is less
 		prob = (math.sqrt(vocabulary[word] / (G.sample * G.train_words)) + 1) * (G.sample * G.train_words) / vocabulary[word]
@@ -79,6 +83,7 @@ def subsample_sentence(sentence, vocabulary):
 			continue
 		else:
 			subsampled_sentence.append(word)
+	# print "subsampled length = %d/%d" % (len(subsampled_sentence), len(sentence))
 	return subsampled_sentence
 
 def get_negative_samples(current_word_index):
@@ -104,6 +109,8 @@ def pretraining_batch_generator(sentences, vocabulary, reverse_vocabulary):
 			# Now we have to perform subsampling of the sentence to remove frequent words
 			# This will improve the speed
 			sentence = subsample_sentence(sentence, vocabulary)
+			if len(sentence) < G.MIN_SENTENCE_LENGTH:
+				continue
 			sent_seq = [reverse_vocabulary[word] for word in sentence]
 
 			# Create current batch
