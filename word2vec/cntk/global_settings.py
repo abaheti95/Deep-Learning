@@ -6,7 +6,7 @@ min_count = 2
 window_size = 3
 sample = 1e-3
 negative = 5
-vocab_size = None
+vocab_size = 1000000
 train_words = None
 
 # Special parameters
