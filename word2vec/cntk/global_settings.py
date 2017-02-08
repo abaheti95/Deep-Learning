@@ -11,3 +11,8 @@ train_words = None
 
 # Special parameters
 MIN_SENTENCE_LENGTH = 3
+
+# Training parameters
+learning_rate = 0.0025
+num_minibatches = None
+minibatch_size = 8
