@@ -9,9 +9,46 @@ from cntk.models import Sequential
 from cntk.initializer import uniform
 
 import global_settings as G
+from sentences_generator import Sentences
+import vocab_generator as V_gen
+import save_embeddings as S
 
-context_size = G.window_size * 2
- 
+k = G.window_size # context windows size
+context_size = 2*k
+
+# Creating a sentence generator from demo file
+sentences = Sentences("test_file.txt")
+vocabulary = dict()
+V_gen.build_vocabulary(vocabulary, sentences)
+V_gen.filter_vocabulary_based_on(vocabulary, G.min_count)
+reverse_vocabulary = V_gen.generate_inverse_vocabulary_lookup(vocabulary, "vocab.txt")
+
+# def cntk_pretraining_batch_generator(sentences, vocabulary, reverse_vocabulary):
+# 	inputs, labels = pretraining_batch_generator(sentences, vocabulary, reverse_vocabulary)
+# 	yield inputs
+
+def cntk_minibatch_generator(minibatch_size, sentences, vocabulary, reverse_vocabulary):
+	word_indexes = list()
+	context_indexes = list()
+	negative_indexes = list()
+	i = 0
+	for inputs in V_gen.pretraining_batch_generator(sentences, vocabulary, reverse_vocabulary):
+		print(inputs)
+		word_indexes.append(inputs[0])
+		context_indexes.append(inputs[1])
+		negative_indexes.append(inputs[2])
+		i += 1
+		if i == minibatch_size:
+			break
+	word_one_hot = C.one_hot(word_indexes, G.vocab_size)
+	context_one_hots = C.one_hot(context_indexes, G.vocab_size)
+	negative_one_hots = C.one_hot(negative_indexes, G.vocab_size)
+
+	print("word one hot input shape = ", word_one_hot.shape)
+	print("context one hot input shape = ", context_one_hots.shape)
+	print("negative one hot input shape = ", negative_one_hots.shape)
+	yield word_one_hot, context_one_hots, negative_one_hots
+
 def create_word2vec_cbow_model(word_one_hot, context_one_hots, negative_one_hots):
 	# shared_embedding_layer = Embedding(G.embedding_dimension, uniform(scale=1.0/2.0/G.embedding_dimension))
 	shared_embedding_layer = Embedding(G.embedding_dimension)
@@ -41,7 +78,8 @@ def create_word2vec_cbow_model(word_one_hot, context_one_hots, negative_one_hots
 	return word_negative_context_product, shared_embedding_layer
 
 def create_trainer():
-	# Will take the model and the batch generator to create a Trainer and return it
+	# Will take the model and the batch generator to create a Trainer
+	# Will return the input variables, trainer variable, model and the embedding layer
 	##################################################
 	################### Inputs #######################
 	##################################################
@@ -63,9 +101,11 @@ def create_trainer():
 
 	trainer = Trainer(word_negative_context_product, loss, eval_loss, learner)
 
-	return trainer, word_negative_context_product, embedding_layer
+	return word_one_hot, context_one_hots, negative_one_hots, trainer, word_negative_context_product, embedding_layer
 
 def train():
+	global sentences, vocabulary, reverse_vocabulary
+	
 	# function will create the trainer and train it for specified number of epochs
 
 	G.num_minibatches = G.train_words // G.minibatch_size
@@ -75,11 +115,13 @@ def train():
 	pp = ProgressPrinter(print_freqency)
 
 	# get the trainer
-	trainer, word_negative_context_product, embedding_layer = create_trainer()
-
-	for train_steps in xrange(G.num_minibatches):
+	word_one_hot, context_one_hots, negative_one_hots, trainer, word_negative_context_product, embedding_layer = create_trainer()
+	# Get the input generator
+	minibatch_generator = cntk_minibatch_generator(G.minibatch_size, sentences, vocabulary, reverse_vocabulary)
+	for train_steps in range(G.num_minibatches):
 		# Get mini_batch and train for one minibatch
-		batch_input = 
-		trainer.train_minibatch()
+		word, context, negatives = next(minibatch_generator)
+		trainer.train_minibatch({word_one_hot: word, context_one_hots: context, negative_one_hots: negatives})
+		pp.update_with_trainer(trainer)
 
-create_trainer(None)
+train()
