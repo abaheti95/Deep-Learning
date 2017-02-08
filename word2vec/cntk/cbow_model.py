@@ -2,6 +2,9 @@ from __future__ import print_function
 import numpy as np
 import cntk as C
 from cntk import Trainer
+from _cntk_py import set_computation_network_trace_level
+set_computation_network_trace_level(1)
+
 from cntk.learner import adam_sgd, UnitType, sgd, learning_rate_schedule, momentum_as_time_constant_schedule
 from cntk.utils import ProgressPrinter
 from cntk.layers import Embedding, GlobalAveragePooling
@@ -22,6 +25,8 @@ vocabulary = dict()
 V_gen.build_vocabulary(vocabulary, sentences)
 V_gen.filter_vocabulary_based_on(vocabulary, G.min_count)
 reverse_vocabulary = V_gen.generate_inverse_vocabulary_lookup(vocabulary, "vocab.txt")
+# 2 buffer vectors are kept for vocabulary
+G.embedding_vocab_size = G.vocab_size + 2
 
 # def cntk_pretraining_batch_generator(sentences, vocabulary, reverse_vocabulary):
 # 	inputs, labels = pretraining_batch_generator(sentences, vocabulary, reverse_vocabulary)
@@ -31,23 +36,31 @@ def cntk_minibatch_generator(minibatch_size, sentences, vocabulary, reverse_voca
 	word_indexes = list()
 	context_indexes = list()
 	negative_indexes = list()
+	targets = list()
 	i = 0
 	for inputs in V_gen.pretraining_batch_generator(sentences, vocabulary, reverse_vocabulary):
 		print(inputs)
 		word_indexes.append(inputs[0])
 		context_indexes.append(inputs[1])
 		negative_indexes.append(inputs[2])
+		
+		target = np.zeros((G.negative + 1))
+		target.itemset(0, 1.0)
+		targets.append(target)
+
 		i += 1
 		if i == minibatch_size:
 			break
-	word_one_hot = C.one_hot(word_indexes, G.vocab_size)
-	context_one_hots = C.one_hot(context_indexes, G.vocab_size)
-	negative_one_hots = C.one_hot(negative_indexes, G.vocab_size)
+	word_one_hot = C.one_hot(word_indexes, G.embedding_vocab_size)
+	context_one_hots = C.one_hot(context_indexes, G.embedding_vocab_size)
+	negative_one_hots = C.one_hot(negative_indexes, G.embedding_vocab_size)
+	targets = np.array(targets)
 
 	print("word one hot input shape = ", word_one_hot.shape)
 	print("context one hot input shape = ", context_one_hots.shape)
 	print("negative one hot input shape = ", negative_one_hots.shape)
-	yield word_one_hot, context_one_hots, negative_one_hots
+	print("targets input shape = ", targets.shape)
+	yield word_one_hot, context_one_hots, negative_one_hots, targets
 
 def create_word2vec_cbow_model(word_one_hot, context_one_hots, negative_one_hots):
 	# shared_embedding_layer = Embedding(G.embedding_dimension, uniform(scale=1.0/2.0/G.embedding_dimension))
@@ -83,13 +96,12 @@ def create_trainer():
 	##################################################
 	################### Inputs #######################
 	##################################################
-	word_one_hot = C.input_variable((G.vocab_size), np.float32)
-	context_one_hots = C.input_variable((context_size, G.vocab_size), np.float32)
-	negative_one_hots = C.input_variable((G.negative, G.vocab_size), np.float32)
+	word_one_hot = C.input_variable((G.embedding_vocab_size), np.float32)
+	context_one_hots = C.input_variable((context_size, G.embedding_vocab_size), np.float32)
+	negative_one_hots = C.input_variable((G.negative, G.embedding_vocab_size), np.float32)
 
-	# Creating the target labels where first is 1 and others are 0
-	target = np.zeros((G.negative + 1))
-	target.itemset(0, 1)
+	# The target labels should have first as 1 and rest as 0
+	target = C.input_variable((G.negative + 1), np.float32)
 
 	word_negative_context_product, embedding_layer = create_word2vec_cbow_model(word_one_hot, context_one_hots, negative_one_hots)
 	loss = C.binary_cross_entropy(word_negative_context_product, target)
@@ -101,7 +113,7 @@ def create_trainer():
 
 	trainer = Trainer(word_negative_context_product, loss, eval_loss, learner)
 
-	return word_one_hot, context_one_hots, negative_one_hots, trainer, word_negative_context_product, embedding_layer
+	return word_one_hot, context_one_hots, negative_one_hots, target, trainer, word_negative_context_product, embedding_layer
 
 def train():
 	global sentences, vocabulary, reverse_vocabulary
@@ -115,13 +127,13 @@ def train():
 	pp = ProgressPrinter(print_freqency)
 
 	# get the trainer
-	word_one_hot, context_one_hots, negative_one_hots, trainer, word_negative_context_product, embedding_layer = create_trainer()
+	word_one_hot, context_one_hots, negative_one_hots, target, trainer, word_negative_context_product, embedding_layer = create_trainer()
 	# Get the input generator
 	minibatch_generator = cntk_minibatch_generator(G.minibatch_size, sentences, vocabulary, reverse_vocabulary)
 	for train_steps in range(G.num_minibatches):
 		# Get mini_batch and train for one minibatch
-		word, context, negatives = next(minibatch_generator)
-		trainer.train_minibatch({word_one_hot: word, context_one_hots: context, negative_one_hots: negatives})
+		word, context, negatives, targets = next(minibatch_generator)
+		trainer.train_minibatch({word_one_hot: word, context_one_hots: context, negative_one_hots: negatives, target: targets})
 		pp.update_with_trainer(trainer)
 
 train()
