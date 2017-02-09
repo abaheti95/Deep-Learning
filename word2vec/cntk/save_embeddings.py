@@ -2,7 +2,7 @@ import codecs
 import global_settings as G
 
 def write_array_to_file(wf, array):
-	for i in xrange(len(array)):
+	for i in range(len(array)):
 		wf.write(str(array.item(i)) + " ")
 	wf.write("\n")
 
