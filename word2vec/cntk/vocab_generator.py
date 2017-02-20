@@ -85,6 +85,8 @@ def subsample_sentence(sentence, vocabulary):
 		else:
 			subsampled_sentence.append(word)
 	# print("subsampled length = %d/%d" % (len(subsampled_sentence), len(sentence)))
+	# if len(subsampled_sentence) == len(sentence):
+	# 	print("Dafuq didn't subsample %d" % len(sentence))
 	return subsampled_sentence
 
 def get_negative_samples(current_word_index):
@@ -95,49 +97,47 @@ def get_negative_samples(current_word_index):
 	return negative_samples
 
 def pretraining_batch_generator(sentences, vocabulary, reverse_vocabulary):
-	# Restart running from the first sentence if the the file reading is done
-	while True:
-		# Read one sentence from the file into memory
-		# For each sentence generate word index sequence
-		# Now spit out batches for training
-		# Each batch will emit the following things
-		# 1 - current word index
-		# 2 - context word indexes
-		# 3 - negative sampled word indexes
-		for sentence in sentences:
-			# split the sentence on whitespace
-			sentence = sentence.split()
-			# Now we have to perform subsampling of the sentence to remove frequent words
-			# This will improve the speed
-			sentence = subsample_sentence(sentence, vocabulary)
-			if len(sentence) < G.MIN_SENTENCE_LENGTH:
-				continue
-			sent_seq = [reverse_vocabulary[word] for word in sentence]
+	# Read one sentence from the file into memory
+	# For each sentence generate word index sequence
+	# Now spit out batches for training
+	# Each batch will emit the following things
+	# 1 - current word index
+	# 2 - context word indexes
+	# 3 - negative sampled word indexes
+	for sentence in sentences:
+		# split the sentence on whitespace
+		sentence = sentence.split()
+		# Now we have to perform subsampling of the sentence to remove frequent words
+		# This will improve the speed
+		sentence = subsample_sentence(sentence, vocabulary)
+		if len(sentence) < G.MIN_SENTENCE_LENGTH:
+			continue
+		sent_seq = [reverse_vocabulary[word] for word in sentence]
 
-			# Create current batch
-			sentence_length = len(sent_seq)
-			for i in range(sentence_length):
-				current_word_index = None
-				context_word_indexes = list()
-				for j in range(-G.window_size, G.window_size + 1):
-					# j will be of indices -G.window_size to G.window_size
-					if j == 0:
-						# current word
-						current_word_index = [sent_seq[i]]
+		# Create current batch
+		sentence_length = len(sent_seq)
+		for i in range(sentence_length):
+			current_word_index = None
+			context_word_indexes = list()
+			for j in range(-G.window_size, G.window_size + 1):
+				# j will be of indices -G.window_size to G.window_size
+				if j == 0:
+					# current word
+					current_word_index = [sent_seq[i]]
+				else:
+					# context word
+					if (i+j) < 0 or (i+j) >= sentence_length:
+						# pad with zeros
+						context_word_indexes.append(0)
 					else:
-						# context word
-						if (i+j) < 0 or (i+j) >= sentence_length:
-							# pad with zeros
-							context_word_indexes.append(0)
-						else:
-							context_word_indexes.append(sent_seq[(i+j)]) 
-				# get negative samples
-				negative_samples = get_negative_samples(current_word_index)
-				# yield a batch here
-				# batch should be a tuple of inputs and targets
-				# print([current_word_index.shape, context_word_indexes.shape, negative_samples.shape], [np.array([1.0]).shape, np.zeros((1,G.negative)).shape])
-				# print([current_word_index, context_word_indexes, negative_samples], [np.array([1.0]), np.zeros((1,G.negative))])
-				yield (current_word_index, context_word_indexes, negative_samples)
+						context_word_indexes.append(sent_seq[(i+j)]) 
+			# get negative samples
+			negative_samples = get_negative_samples(current_word_index)
+			# yield a batch here
+			# batch should be a tuple of inputs and targets
+			# print([current_word_index.shape, context_word_indexes.shape, negative_samples.shape], [np.array([1.0]).shape, np.zeros((1,G.negative)).shape])
+			# print([current_word_index, context_word_indexes, negative_samples], [np.array([1.0]), np.zeros((1,G.negative))])
+			yield (current_word_index, context_word_indexes, negative_samples)
 
 def sentences_to_index_sequences(sentences, vocabulary, save_vocab_filepath, save_index_filepath):
 	# generate inverse vocabulary lookup
