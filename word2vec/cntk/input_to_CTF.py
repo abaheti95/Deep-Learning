@@ -27,7 +27,9 @@ def create_CTF_format_input(sentences, vocabulary, reverse_vocabulary):
 			wf.write("\n")
 
 			training_instances += 1
-	with open(G.Input_Config_file, 'w') as wf:
+			if training_instances%1000000 == 0:
+				print(training_instances, "entries created")
+	with open(G.CTF_config_file, 'w') as wf:
 		wf.write(str(training_instances) + "\n")
 	return training_instances
 
